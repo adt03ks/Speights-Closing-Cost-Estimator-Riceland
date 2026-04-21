@@ -238,7 +238,7 @@
           </div>
         </div>
         <div class="note">
-          Buydown logic: any rate entered below 6.00% adds a points charge at <strong>1% of the base loan amount per point</strong>.
+          Buydown logic: every <strong>0.25% rate reduction = 1 point</strong>, and each point costs <strong>1% of the base loan amount</strong>.
           Example: 5.50% = 0.50 point reduction = 0.50% of the base loan amount added to origination charges.
         </div>
         <div class="form-grid" style="margin-top:14px;">
@@ -525,11 +525,12 @@
       }
 
       const defaultRateForPoints = (isVA && els.txvlbProgram.checked) ? 5.5 : 6;
-      const buydownPoints = Math.max(defaultRateForPoints - rate, 0);
-      const buydownCost = baseLoanAmount * (buydownPoints / 100);
+      const rateReduction = Math.max(defaultRateForPoints - rate, 0);
+      const buydownPoints = rateReduction / 0.25;
+      const buydownCost = baseLoanAmount * buydownPoints * 0.01;
 
       const loanCosts = [
-        ['A. Origination Charges', '% of Loan Amount (Points / Buydown)', buydownCost],
+        ['A. Origination Charges', `Points / Buydown (${buydownPoints.toFixed(2)} pts)`, buydownCost],
         ['A. Origination Charges', 'Administration Fee', fixedDefaults.adminFee],
         ['A. Origination Charges', 'Origination Fee', originationFee],
         ['A. Origination Charges', 'Tax Service Fee', fixedDefaults.taxServiceFee],

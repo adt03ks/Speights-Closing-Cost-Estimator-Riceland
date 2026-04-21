@@ -224,16 +224,37 @@
             <input id="hoaAnnual" type="number" value="1200" min="0" step="50" />
           </div>
         </div>
+        <div class="form-grid" style="margin-top:14px;">
+          <div>
+            <label>Tax Exemptions</label>
+            <div class="checkbox-wrap">
+              <input id="homesteadExempt" type="checkbox" />
+              <span>Homestead Exemption (20% tax reduction)</span>
+            </div>
+            <div class="checkbox-wrap" style="margin-top:8px;">
+              <input id="vaTaxDisabled" type="checkbox" />
+              <span>VA Total Disability (100% tax reduction)</span>
+            </div>
+          </div>
+        </div>
         <div class="note">
           Buydown logic: any rate entered below 6.00% adds a points charge at <strong>1% of the base loan amount per point</strong>.
           Example: 5.50% = 0.50 point reduction = 0.50% of the base loan amount added to origination charges.
         </div>
         <div class="form-grid" style="margin-top:14px;">
-          <div>
-            <label for="vaExempt">VA Funding Fee Exempt?</label>
+          <div id="vaExemptWrap" style="display:none;">
+            <label for="vaExempt">VA Funding Fee Exempt</label>
             <div class="checkbox-wrap">
               <input id="vaExempt" type="checkbox" />
-              <span>Check for fully disabled / VA exempt</span>
+              <span>Check if borrower is exempt from the VA funding fee</span>
+            </div>
+            <div id="txvlbWrap" style="display:none; margin-top:8px;">
+              <label for="txvlbProgram">TXVLB Program</label>
+              <div class="checkbox-wrap">
+                <input id="txvlbProgram" type="checkbox" />
+                <span>Available only for eligible disabled veterans using a VA loan</span>
+              </div>
+              <div class="fineprint" style="margin-top:6px;">1% of loan amount</div>
             </div>
           </div>
           <div>
@@ -343,6 +364,9 @@
       taxRate: document.getElementById('taxRate'),
       hoaAnnual: document.getElementById('hoaAnnual'),
       vaExempt: document.getElementById('vaExempt'),
+      txvlbProgram: document.getElementById('txvlbProgram'),
+      homesteadExempt: document.getElementById('homesteadExempt'),
+      vaTaxDisabled: document.getElementById('vaTaxDisabled'),
       feesBody: document.getElementById('feesBody'),
       creditCapture: document.getElementById('creditCapture'),
       clientName: document.getElementById('clientName'),
@@ -426,7 +450,24 @@
       return principal * (r * Math.pow(1+r, n)) / (Math.pow(1+r, n) - 1);
     }
 
+
+    function updateConditionalUI() {
+      const isVA = els.loanType.value === 'VA';
+      const vaExemptWrap = document.getElementById('vaExemptWrap');
+      const txvlbWrap = document.getElementById('txvlbWrap');
+      vaExemptWrap.style.display = isVA ? '' : 'none';
+      txvlbWrap.style.display = (isVA && els.vaExempt.checked) ? '' : 'none';
+      if (!isVA) {
+        els.vaExempt.checked = false;
+        els.txvlbProgram.checked = false;
+      }
+      if (!(isVA && els.vaExempt.checked)) {
+        els.txvlbProgram.checked = false;
+      }
+    }
+
     function recalc() {
+      updateConditionalUI();
       const homePrice = Number(els.homePrice.value) || 0;
       const rate = Number(els.interestRate.value) || 0;
       let downPct = Number(els.downPercent.value) || 0;
@@ -446,7 +487,12 @@
       const sqft = Number(els.planSqft.value) || 0;
       const annualInsurance = insuranceAnnualForSqft(sqft);
       const monthlyInsurance = annualInsurance / 12;
-      const annualTaxes = homePrice * ((Number(els.taxRate.value) || 0) / 100);
+      const baseAnnualTaxes = homePrice * ((Number(els.taxRate.value) || 0) / 100);
+      let taxReductionFactor = 0;
+      if (els.homesteadExempt.checked) taxReductionFactor += 0.20;
+      if (els.vaTaxDisabled.checked) taxReductionFactor = 1;
+      taxReductionFactor = Math.min(taxReductionFactor, 1);
+      const annualTaxes = baseAnnualTaxes * (1 - taxReductionFactor);
       const monthlyTaxes = annualTaxes / 12;
       const monthlyHoa = (Number(els.hoaAnnual.value) || 0) / 12;
 
@@ -472,13 +518,14 @@
       const loanAmountForPI = baseLoanAmount + (isUSDA ? upfrontFundingOrMip : 0);
 
       let originationFee = fixedDefaults.nonVALoanOriginationDefault;
-      let txvlbFee = fixedDefaults.nonVATXVLBDefault;
+      let txvlbFee = 0;
       if (isVA) {
         originationFee = baseLoanAmount * 0.01;
-        txvlbFee = baseLoanAmount * 0.01;
+        txvlbFee = els.txvlbProgram.checked ? (baseLoanAmount * 0.01) : 0;
       }
 
-      const buydownPoints = Math.max(6 - rate, 0);
+      const defaultRateForPoints = (isVA && els.txvlbProgram.checked) ? 5.5 : 6;
+      const buydownPoints = Math.max(defaultRateForPoints - rate, 0);
       const buydownCost = baseLoanAmount * (buydownPoints / 100);
 
       const loanCosts = [
@@ -486,7 +533,7 @@
         ['A. Origination Charges', 'Administration Fee', fixedDefaults.adminFee],
         ['A. Origination Charges', 'Origination Fee', originationFee],
         ['A. Origination Charges', 'Tax Service Fee', fixedDefaults.taxServiceFee],
-        ['A. Origination Charges', 'TXVLB Participation Fee', txvlbFee],
+        ...(isVA && els.txvlbProgram.checked ? [['A. Origination Charges', 'TXVLB Participation Fee', txvlbFee]] : []),
         ['A. Origination Charges', 'Underwriting Fees', fixedDefaults.underwritingFee],
         ['B. Services You Cannot Shop For', 'Appraisal Fee', fixedDefaults.appraisalFee],
         ['B. Services You Cannot Shop For', 'Closing Coordination Fee', fixedDefaults.closingCoordFee],
@@ -507,7 +554,6 @@
       ];
 
       const prepaidInterest = loanAmountForPI * (rate/100) / 365 * fixedDefaults.prepaidInterestDays;
-      const prepaidTaxes = monthlyTaxes * 3;
       const initialEscrowInsurance = monthlyInsurance * 3;
       const initialEscrowTaxes = monthlyTaxes * 3;
 
@@ -515,7 +561,6 @@
         ['E. Taxes and Other Government Fees', 'Recording Fees and Other Taxes', fixedDefaults.recordingFees],
         ['F. Prepaids', "Homeowner's Insurance Premium (12 months)", annualInsurance],
         ['F. Prepaids', `Prepaid Interest (${fixedDefaults.prepaidInterestDays} days @ ${rate.toFixed(2)}%)`, prepaidInterest],
-        ['F. Prepaids', 'Property Taxes (3 months estimated)', prepaidTaxes],
         ['G. Initial Escrow Payment at Closing', "Homeowner's Insurance (3 months)", initialEscrowInsurance],
         ['G. Initial Escrow Payment at Closing', 'Property Taxes (3 months)', initialEscrowTaxes],
         ['H. Other', 'HOA CAP/Assessment Fee', fixedDefaults.hoaCapFee],
@@ -537,7 +582,7 @@
       const totalClosingCosts = totalLoanCosts + totalOtherCosts;
       const totalCredits = (Number(els.sellerCredits.value) || 0) + (Number(els.earnestMoney.value) || 0);
       const cashToClose = Math.max(totalClosingCosts - totalCredits + downAmt, 0);
-      const prepaidsEscrow = annualInsurance + prepaidInterest + prepaidTaxes + initialEscrowInsurance + initialEscrowTaxes;
+      const prepaidsEscrow = annualInsurance + prepaidInterest + initialEscrowInsurance + initialEscrowTaxes;
 
       document.getElementById('mLoanAmount').textContent = currency(loanAmountForPI);
       document.getElementById('mCashToClose').textContent = currency(cashToClose);
@@ -568,7 +613,8 @@
 
       window.currentEstimate = {
         loanType, sqft, homePrice, rate, downPct, downAmt, baseLoanAmount, loanAmountForPI,
-        annualInsurance, annualTaxes, monthlyHoa, monthlyMi, pi, totalMonthly, totalClosingCosts, totalCredits, cashToClose,
+        annualInsurance, annualTaxes, baseAnnualTaxes, taxReductionFactor, monthlyHoa, monthlyMi, pi, totalMonthly, totalClosingCosts, totalCredits, cashToClose,
+        vaExempt: els.vaExempt.checked, txvlbProgram: els.txvlbProgram.checked, homesteadExempt: els.homesteadExempt.checked, vaTaxDisabled: els.vaTaxDisabled.checked,
         capture: els.creditCapture.value.trim()
       };
     }
@@ -599,6 +645,9 @@ Selections:
 - Estimated Loan Amount: ${currency2(e.loanAmountForPI)}
 - Annual Insurance Estimate: ${currency2(e.annualInsurance)}
 - Annual Property Taxes Estimate: ${currency2(e.annualTaxes)}
+- Tax Exemptions: ${e.vaTaxDisabled ? 'VA Total Disability (100% tax reduction)' : (e.homesteadExempt ? 'Homestead Exemption (20% tax reduction)' : 'None')}
+- VA Funding Fee Exempt: ${e.vaExempt ? 'Yes' : 'No'}
+- TXVLB Program: ${e.txvlbProgram ? 'Yes' : 'No'}
 - Estimated Total Closing Costs: ${currency2(e.totalClosingCosts)}
 - Total Credits: ${currency2(e.totalCredits)}
 - Estimated Cash to Close: ${currency2(e.cashToClose)}
@@ -616,10 +665,38 @@ Thank you.`);
     }
 
     ['input','change'].forEach(evt => {
-      [els.loanType, els.planSqft, els.homePrice, els.interestRate, els.downPercent, els.downAmount, els.sellerCredits, els.earnestMoney, els.taxRate, els.hoaAnnual, els.vaExempt, els.creditCapture].forEach(el => el.addEventListener(evt, recalc));
+      [els.loanType, els.planSqft, els.homePrice, els.interestRate, els.downPercent, els.downAmount, els.sellerCredits, els.earnestMoney, els.taxRate, els.hoaAnnual, els.vaExempt, els.txvlbProgram, els.homesteadExempt, els.vaTaxDisabled, els.creditCapture].forEach(el => el.addEventListener(evt, recalc));
     });
     els.downPercent.addEventListener('input', () => lastDownEdit = 'percent');
     els.downAmount.addEventListener('input', () => lastDownEdit = 'amount');
+
+    els.vaTaxDisabled.addEventListener('change', () => {
+      if (els.vaTaxDisabled.checked && els.loanType.value === 'VA') els.vaExempt.checked = true;
+      recalc();
+    });
+    els.loanType.addEventListener('change', () => {
+      if (els.loanType.value !== 'VA') {
+        els.vaExempt.checked = false;
+        els.txvlbProgram.checked = false;
+        if (Number(els.interestRate.value) === 5.5 || Number(els.interestRate.value) === 6) els.interestRate.value = 6;
+      }
+      recalc();
+    });
+    els.vaExempt.addEventListener('change', () => {
+      if (!els.vaExempt.checked) {
+        els.txvlbProgram.checked = false;
+        if (Number(els.interestRate.value) === 5.5) els.interestRate.value = 6;
+      }
+      recalc();
+    });
+    els.txvlbProgram.addEventListener('change', () => {
+      if (els.txvlbProgram.checked) {
+        els.interestRate.value = 5.5;
+      } else if (Number(els.interestRate.value) === 5.5) {
+        els.interestRate.value = 6;
+      }
+      recalc();
+    });
     els.emailBtn.addEventListener('click', buildMailto);
     recalc();
   </script>

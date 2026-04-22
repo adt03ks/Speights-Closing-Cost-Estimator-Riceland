@@ -286,6 +286,12 @@
           <div class="results-grid">
             <div class="metric"><div class="label">Loan Amount</div><div class="value" id="mLoanAmount">$0</div></div>
             <div class="metric"><div class="label">Estimated Cash to Close</div><div class="value" id="mCashToClose">$0</div></div>
+            if (cashToClose < 0) {
+  document.getElementById("cashNote").innerText =
+    "Credits exceed closing costs. Excess may be applied toward allowable items per lender guidelines.";
+} else {
+  document.getElementById("cashNote").innerText = "";
+}
             <div class="metric"><div class="label">Monthly Principal &amp; Interest</div><div class="value" id="mPI">$0</div></div>
             <div class="metric"><div class="label">Estimated Total Monthly Payment</div><div class="value" id="mTotalMonthly">$0</div></div>
           </div>
